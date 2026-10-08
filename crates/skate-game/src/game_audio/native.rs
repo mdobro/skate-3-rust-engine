@@ -966,6 +966,7 @@ fn follow_volume(
     native: Option<Res<Native>>,
     menu: Option<Res<crate::graphics_menu::Menu>>,
     replay: Res<crate::replay::Replay>,
+    #[cfg(target_os = "android")] suspended: Option<Res<crate::android_lifecycle::Suspended>>,
     mut sinks: Query<&mut AudioSink, With<NativeOutput>>,
     voices: Option<ResMut<super::Voices>>,
     mut listeners: Query<&mut SpatialListener, With<super::GameAudioListener>>,
@@ -984,6 +985,8 @@ fn follow_volume(
         }
     }
     let silenced = super::silenced(menu.as_deref(), &replay);
+    #[cfg(target_os = "android")]
+    let silenced = silenced || suspended.is_some_and(|s| s.0);
     let volume = settings.master().clamp(0.0, 1.0);
     // The measured world layers (zone beds, location sets, crossfades) are tuned at measured retail
     // level × RETAIL_SCALE; against the native voices (retail level) they play at the measured

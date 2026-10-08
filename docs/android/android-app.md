@@ -46,3 +46,29 @@ Sticks are i16 values (-32768..32767) in XInput convention (Y up is positive, Ko
 The Rust side should treat `deviceId` as an opaque Android device id (not a slot index), drop state for unknown ids or after disconnect, and bump its packet number on each `gamepadState`. Gamepad key and motion events are consumed in `SkateActivity`, so B never becomes BACK.
 
 Logcat tag is `skate3`. Each device logs `Controller connected: <name> vendor=%04x product=%04x`.
+
+## Window, lifecycle and present mode (Phase 2)
+
+All of this is `cfg(target_os = "android")`; desktop is unchanged.
+
+- No fixed 1280x800 window; the surface decides the size. `graphics_menu` no longer applies the saved width/height to the window, the Resolution row is read-only (shows the surface size), and the Alt+Enter fullscreen toggle is not run.
+- Present mode is `AutoVsync` (Fifo).
+- `WinitSettings.unfocused_mode` is `reactive_low_power(1 s)`.
+- `android_lifecycle.rs` reads `AppLifecycle`: on `WillSuspend`/`Suspended` it pauses every `AudioSink` and `Time<Virtual>` (only if it was not already paused), and sets `Suspended`, which `game_audio::native::follow_volume` ORs into `silenced` so the native AEMS stream stays paused. `WillResume`/`Running` undoes it.
+- The Gradle cargo task sets `CARGO_INCREMENTAL=0` and `CARGO_PROFILE_{DEV,RELEASE}_DEBUG=0` so the `.so` has no debuginfo. `Cargo.toml` profiles are untouched.
+
+## Phase 3 (Rust input)
+
+`skate_game::android_input` (`input/platform.rs`, `mod android`) mirrors the SDL backend's slot table, and `crates/skate-android/src/gamepad.rs` holds the three JNI exports.
+
+- `gamepadConnected` takes the first free of four slots (connect order, no player-index preference), keyed by the opaque Android device id. A known id is ignored, a fifth pad is logged and dropped. The log line is `Controller N: identified as <summary>`.
+- `gamepadDisconnected` frees the slot, so the next pad reuses it. `gamepadState` for an unknown id is ignored; the packet number advances only when the state changes.
+- State is clamped by `android_state` (sticks to `i16`, triggers to `0..=255`); Y is already up-positive from Kotlin. Slots report XInput subtype 1 like SDL pads, so gameplay, customiser and the Esc menu read them through the same `poll`.
+- Identity is `ControllerKind::from_android`: backend `android`, driver `android#<id>`, model table and `settings/controller.json` `models` first. Vendor `0x358a` (Backbone Labs) with any product id is `Backbone One`, family Xbox One / Series (Xbox prompts). Unknown pads are `Standard` and keep the reported name.
+
+## Smoke test
+
+```
+scripts/android-smoke.sh                       # build APK; with a device: install, launch, tail logcat (skate3, RustStdoutStderr)
+scripts/android-smoke.sh push-data <dir>       # adb push <dir>/. to /sdcard/Android/data/com.skate3.engine/files/installation/
+```

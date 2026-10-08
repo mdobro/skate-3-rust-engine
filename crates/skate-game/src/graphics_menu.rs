@@ -209,7 +209,7 @@ impl Plugin for GraphicsMenuPlugin {
             .add_systems(PostStartup, setup.in_set(PresentationSetup))
             .add_systems(PreUpdate, (refresh_sections, interact, apply_custom_difficulty).chain().in_set(MenuInput).after(bevy::input::InputSystems))
             .add_systems(PreUpdate, finish_menu_travel.after(crate::map_transition::MapTransitionSet).before(crate::input::poll_controllers))
-            .add_systems(PreUpdate, toggle_fullscreen.after(bevy::input::InputSystems))
+            .add_systems(PreUpdate, toggle_fullscreen.after(bevy::input::InputSystems).run_if(|| cfg!(not(target_os = "android"))))
             .add_systems(Update, preview_menu.before(labels))
             .add_systems(Update, custom_sliders.before(labels))
             .add_systems(Update, (crate::map_render::advance_day, apply, labels, scroll_menu, resize_menu).chain())
@@ -238,10 +238,18 @@ fn setup(
         Err(_) => GraphicsSettings::default(),
     }
     .validated();
-    window
-        .resolution
-        .set_physical_resolution(settings.width, settings.height);
-    window.present_mode = PresentMode::AutoNoVsync;
+    // Android: the surface fixes the size, and Fifo is the platform's vsync.
+    #[cfg(not(target_os = "android"))]
+    {
+        window
+            .resolution
+            .set_physical_resolution(settings.width, settings.height);
+        window.present_mode = PresentMode::AutoNoVsync;
+    }
+    #[cfg(target_os = "android")]
+    {
+        window.present_mode = PresentMode::AutoVsync;
+    }
     let size = settings.internal_size(window.physical_size());
     let mut image = Image::new_target_texture(size.x, size.y, TextureFormat::Rgba8UnormSrgb, None);
     image.sampler = ImageSampler::linear();
@@ -566,6 +574,7 @@ pub(crate) fn interact(
                 300..=334 => { menu.custom.adjust(row-300,direction); menu.custom_dirty=true; },
                 335 => menu.custom_apply=true,
                 336 => { menu.custom=menu.custom_defaults.clone(); menu.custom_dirty=true; menu.status="Easy values restored. Select Apply custom tuning to use them.".into(); },
+                0 if cfg!(target_os = "android") => {}
                 0 => {
                     let size = cycle(
                         RESOLUTIONS,
@@ -680,7 +689,8 @@ fn apply(
     mut images: ResMut<Assets<Image>>,
     mut previous: Local<Option<GraphicsSettings>>,
 ) {
-    if window.mode == WindowMode::Windowed
+    if cfg!(not(target_os = "android"))
+        && window.mode == WindowMode::Windowed
         && previous
             .as_ref()
             .is_none_or(|p| p.width != menu.settings.width || p.height != menu.settings.height)
@@ -831,6 +841,9 @@ fn labels(
             }
         } else {
             match label.0 {
+                #[cfg(target_os = "android")]
+                0 => format!("Resolution          {} x {}", window.physical_width(), window.physical_height()),
+                #[cfg(not(target_os = "android"))]
                 0 => format!("Resolution          {} x {}", s.width, s.height),
                 1 => format!(
                     "Internal resolution   {}%  ({} x {})",

@@ -11,6 +11,8 @@ macro_rules! report_meta {
     ($($t:tt)*) => { console!("REPORT_META {}", format_args!($($t)*)) };
 }
 
+#[cfg(target_os = "android")]
+mod android_lifecycle;
 mod frame_timing;
 mod animation;
 mod crash_report;

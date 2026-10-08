@@ -78,7 +78,10 @@ pub(crate) fn build(
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: config.multiplayer.title.clone().unwrap_or_else(||"Skate 3 Rust Engine".into()),
+                    #[cfg(not(target_os = "android"))]
                     resolution: (1280, 800).into(),
+                    #[cfg(target_os = "android")]
+                    resizable: true,
                     ..default()
                 }),
                 ..default()
@@ -100,7 +103,13 @@ pub(crate) fn build(
             // PreUpdate (70.68 ms in the University capture).
             .disable::<bevy::gilrs::GilrsPlugin>(),
     )
-    .insert_resource(bevy::winit::WinitSettings {focused_mode:bevy::winit::UpdateMode::Continuous,unfocused_mode:bevy::winit::UpdateMode::Continuous})
+    .insert_resource(bevy::winit::WinitSettings {
+        focused_mode: bevy::winit::UpdateMode::Continuous,
+        #[cfg(not(target_os = "android"))]
+        unfocused_mode: bevy::winit::UpdateMode::Continuous,
+        #[cfg(target_os = "android")]
+        unfocused_mode: bevy::winit::UpdateMode::reactive_low_power(std::time::Duration::from_secs(1)),
+    })
     .insert_resource(config)
     .insert_resource(crate::retail_render::RetailScene(retail_scene))
     .insert_resource(assets::AssetManifest(manifest))
@@ -156,6 +165,8 @@ pub(crate) fn build(
     app.add_plugins(crate::water_splash::WaterSplashPlugin);
     app.add_plugins(crate::ui_audio::UiAudioPlugin);
     app.add_plugins(crate::game_audio::GameAudioPlugin);
+    #[cfg(target_os = "android")]
+    app.add_plugins(crate::android_lifecycle::AndroidLifecyclePlugin);
     app.add_systems(Last, crate::crash_context::sample);
     crate::profiling::install(&mut app);
     app

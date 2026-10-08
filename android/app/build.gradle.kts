@@ -89,6 +89,10 @@ abstract class CargoNdk @Inject constructor(private val ops: ExecOperations) : D
         if (release.get()) args += "--release"
         ops.exec {
             workingDir = repoRoot.get().asFile
+            // Keep debuginfo out of the .so (it would be hundreds of MB); desktop profiles are untouched.
+            environment("CARGO_INCREMENTAL", "0")
+            environment("CARGO_PROFILE_DEV_DEBUG", "0")
+            environment("CARGO_PROFILE_RELEASE_DEBUG", "0")
             commandLine(args)
         }
     }
