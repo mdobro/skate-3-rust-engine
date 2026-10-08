@@ -76,5 +76,6 @@ pub(crate) fn spawn_test_world(
             ..default()
         },
         Transform::from_xyz(4., 7., 4.).looking_at(Vec3::ZERO, Vec3::Y),
+        crate::shadow_quality::ShadowTier::Fallback,
     ));
 }

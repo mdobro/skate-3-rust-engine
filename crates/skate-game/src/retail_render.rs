@@ -39,10 +39,22 @@ use crate::map_render::AssetSink;
 /// 16-per-stage floor while covering the observed size spread.
 pub(crate) const PAGE_CLASSES: usize = 8;
 
-/// Conservative `max_texture_array_layers`. The scene is staged off the main
-/// thread with no render device in hand, so this is a constant rather than a
-/// queried limit; every desktop target we care about allows at least this many.
-const MAX_PAGE_LAYERS: usize = 2048;
+/// Upper bound on layers per page. The scene is staged off the main thread with
+/// no render device in hand, so `render_caps` publishes the device's
+/// `max_texture_array_layers` at startup and `page_layer_limit` takes the
+/// smaller of the two. A lower limit just seals slabs sooner (more slabs).
+pub(crate) const MAX_PAGE_LAYERS: usize = 2048;
+
+static PAGE_LAYER_LIMIT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(MAX_PAGE_LAYERS);
+
+pub(crate) fn set_page_layer_limit(device_limit: usize) {
+    PAGE_LAYER_LIMIT.store(device_limit.clamp(1, MAX_PAGE_LAYERS), std::sync::atomic::Ordering::Relaxed);
+}
+
+fn page_layer_limit() -> usize {
+    PAGE_LAYER_LIMIT.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// scene.hlsl's retail world ALPHAREF is 30, not the portable 0.5.
 const ALPHA_REF: f32 = 30. / 255.;
@@ -1143,7 +1155,7 @@ impl Slab {
         self.pages
             .iter()
             .enumerate()
-            .all(|(class, page)| page.layers.len() + needed[class] <= MAX_PAGE_LAYERS)
+            .all(|(class, page)| page.layers.len() + needed[class] <= page_layer_limit())
     }
 
     fn insert(&mut self, request: &Request, map: &SkateMap, slab: u16) -> MaterialEntry {
@@ -1173,6 +1185,14 @@ impl Slab {
                 Some(&(_, layer)) => layer,
                 None => {
                     let page = &mut self.pages[class];
+                    if page.layers.len() >= page_layer_limit() {
+                        // `fits` already sealed the slab, so one material alone
+                        // needs more layers of a class than the device allows.
+                        error!(
+                            "page class {class} ({}x{}) exceeds {} layers; texture {} will sample a wrong layer",
+                            page.width, page.height, page_layer_limit(), channel.id
+                        );
+                    }
                     page.layers.push(channel.id);
                     let layer = page.layers.len() - 1;
                     self.placed.insert(channel.id, (class, layer));

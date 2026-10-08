@@ -13,6 +13,9 @@ macro_rules! report_meta {
 
 #[cfg(target_os = "android")]
 mod android_lifecycle;
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+mod android_perf;
+mod render_caps;
 mod frame_timing;
 mod animation;
 mod crash_report;
@@ -59,6 +62,7 @@ mod customiser_material;
 mod custom_models;
 mod teleport_menu;
 mod render_capacity;
+mod shadow_quality;
 mod retail_render;
 mod retail_character;
 mod retail_exposure;

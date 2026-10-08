@@ -183,6 +183,15 @@ impl FrameTiming {
         self.origin.elapsed().as_secs_f64()
     }
 
+    /// Mean fps and 95th percentile frame time over the stats window.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub(crate) fn window_fps_p95(&self) -> (f32, f32) {
+        let mut frames: Vec<f32> = self.window.iter().map(|s| s.ms).collect();
+        frames.sort_unstable_by(f32::total_cmp);
+        let p95 = stats::percentile(&frames, 95.0);
+        (self.summary.fps(), p95)
+    }
+
     #[cfg(test)]
     pub(crate) fn summary(&self) -> stats::Summary {
         self.summary

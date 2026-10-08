@@ -214,6 +214,7 @@ fn spawn_shadow_sources(commands: &mut Commands, light: Vec3) {
     // sampled by the native character shader.
     commands.spawn((
         ShadowSource,
+        crate::shadow_quality::ShadowTier::Scene,
         Name::new("Scene sun and shadow visibility"),
         DirectionalLight {
             illuminance: 11_000.,
@@ -233,6 +234,7 @@ fn spawn_shadow_sources(commands: &mut Commands, light: Vec3) {
     // this separate map so baked building/terrain shadows are not re-applied.
     commands.spawn((
         ShadowSource,
+        crate::shadow_quality::ShadowTier::Receiver,
         Name::new("Dynamic object shadows onto baked world"),
         DirectionalLight {
             illuminance: 0.,

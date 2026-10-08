@@ -12,6 +12,7 @@ use bevy::{
     window::{MonitorSelection, PresentMode, PrimaryWindow, WindowMode},
 };
 use serde::{Deserialize, Serialize};
+use crate::shadow_quality::ShadowQuality;
 use std::{
     path::PathBuf,
     time::{Duration, Instant},
@@ -27,7 +28,11 @@ const RESOLUTIONS: &[(u32, u32)] = &[
     (2560, 1600),
     (3840, 2160),
 ];
+#[cfg(not(target_os = "android"))]
 const SCALES: &[u32] = &[25, 50, 67, 75, 85, 100];
+/// Android adds 70%, the first-run default.
+#[cfg(target_os = "android")]
+const SCALES: &[u32] = &[25, 50, 67, 70, 75, 85, 100];
 const DAY_SPEEDS: &[u32] = &[0, 1, 10, 30, 60, 120, 360, 720];
 const LIMITS: &[u32] = &[0, 30, 60, 90, 120, 144, 165, 240];
 
@@ -43,6 +48,10 @@ struct GraphicsSettings {
     ambient_level: Option<u32>,
     /// On-screen frame-time counter (`frame_timing`); off by default.
     frame_stats: bool,
+    shadow_quality: ShadowQuality,
+    /// Android debugging switch: false turns off GPU occlusion culling and the
+    /// GPU instance buffer builder (applied at startup). See docs/android/rendering.md.
+    gpu_culling: bool,
 }
 impl Default for GraphicsSettings {
     fn default() -> Self {
@@ -55,6 +64,18 @@ impl Default for GraphicsSettings {
             day_speed: 60,
             ambient_level: None,
             frame_stats: false,
+            shadow_quality: ShadowQuality::High,
+            gpu_culling: true,
+        }
+    }
+}
+impl GraphicsSettings {
+    /// First run with no saved file: phone-class defaults on Android.
+    fn first_run() -> Self {
+        if cfg!(target_os = "android") {
+            Self { scale: 70, fps: 60, shadow_quality: ShadowQuality::Medium, ..Self::default() }
+        } else {
+            Self::default()
         }
     }
 }
@@ -77,6 +98,18 @@ impl GraphicsSettings {
     fn internal_size(&self, window: UVec2) -> UVec2 {
         (window * self.scale / 100).max(UVec2::ONE)
     }
+}
+fn settings_path(asset_root: &std::path::Path) -> PathBuf {
+    asset_root.parent().unwrap_or(asset_root).join("settings/graphics.json")
+}
+/// `gpu_culling` from the saved settings, read before the app (and so the
+/// renderer plugins) exists. Missing or unreadable means on.
+pub(crate) fn saved_gpu_culling(asset_root: &std::path::Path) -> bool {
+    std::fs::read(settings_path(asset_root))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|v| v.get("gpu_culling")?.as_bool())
+        .unwrap_or(true)
 }
 #[derive(Resource)]
 pub(crate) struct Menu {
@@ -114,6 +147,9 @@ impl Menu {
     /// Whether the frame-time counter is shown (graphics menu row, saved).
     pub(crate) fn frame_stats_visible(&self) -> bool {
         self.settings.frame_stats
+    }
+    pub(crate) fn shadow_quality(&self) -> ShadowQuality {
+        self.settings.shadow_quality
     }
     pub(crate) fn diagnostic_settings(&self) -> String {
         format!("{:?}", self.settings)
@@ -162,7 +198,7 @@ impl Menu {
             0 => (1000..1000 + self.maps.len()).collect(),
             1 if self.difficulty == Difficulty::Custom => std::iter::once(3).chain(300..337).chain([CAMERA_ANGLE_ROW,8,10]).collect(),
             1 => vec![3, CAMERA_ANGLE_ROW, 8, 10],
-            2 => vec![0, 1, 2, 13, 16, 17, 18, FRAME_STATS_ROW],
+            2 => vec![0, 1, 2, 13, 16, 17, 18, FRAME_STATS_ROW, SHADOW_ROW],
             4 => vec![7, 11, 14, 19],
             i if i >= SECTIONS.len() => self.custom_sections.get(i-SECTIONS.len()).map_or(Vec::new(), |(_,entries)| (200..200+entries.len()).collect()),
             _ => Vec::new(),
@@ -214,6 +250,7 @@ impl Plugin for GraphicsMenuPlugin {
             .add_systems(Update, custom_sliders.before(labels))
             .add_systems(Update, (crate::map_render::advance_day, apply, labels, scroll_menu, resize_menu).chain())
             .add_systems(PostUpdate, crate::map_render::position_celestial_bodies.before(bevy::transform::TransformSystems::Propagate))
+            .add_systems(Update, crate::shadow_quality::apply)
             .add_systems(Last, pace);
     }
 }
@@ -225,17 +262,13 @@ fn setup(
     cameras: Query<Entity, With<Camera3d>>,
     mut time: ResMut<Time<Virtual>>,
 ) {
-    let path = config
-        .asset_root
-        .parent()
-        .unwrap_or(&config.asset_root)
-        .join("settings/graphics.json");
+    let path = settings_path(&config.asset_root);
     let settings = match std::fs::read(&path) {
         Ok(bytes) => serde_json::from_slice::<GraphicsSettings>(&bytes).unwrap_or_else(|e| {
             warn!("Graphics settings: {e}");
-            GraphicsSettings::default()
+            GraphicsSettings::first_run()
         }),
-        Err(_) => GraphicsSettings::default(),
+        Err(_) => GraphicsSettings::first_run(),
     }
     .validated();
     // Android: the surface fixes the size, and Fifo is the platform's vsync.
@@ -305,7 +338,7 @@ fn setup(
                 body.spawn((Text::new(""),MenuSubtitle,TextFont {font_size:16.,..default()},TextColor(Color::srgb(0.65,0.72,0.72))));
                 body.spawn((Node {height:px(3),width:px(64),margin:UiRect::bottom(px(10)),..default()},BackgroundColor(Color::srgb(0.78,0.96,0.3))));
                 body.spawn((MenuScroll,ScrollPosition::default(),Node {flex_grow:1.,min_height:px(0),overflow:Overflow::scroll_y(),flex_direction:FlexDirection::Column,row_gap:px(8),..default()})).with_children(|list| {
-                    for i in (0..4).chain(300..337).chain(4..10).chain(11..20).chain(20..27).chain([10,FRAME_STATS_ROW]).chain(200..264).chain([50,51]).chain(1000..1000+maps.len()).chain(1_000_000..1_000_000+destinations.len()) {
+                    for i in (0..4).chain(300..337).chain(4..10).chain(11..20).chain(20..27).chain([10,FRAME_STATS_ROW,SHADOW_ROW]).chain(200..264).chain([50,51]).chain(1000..1000+maps.len()).chain(1_000_000..1_000_000+destinations.len()) {
                         list.spawn((Button,MenuRow(i),Node {flex_direction:if (300..335).contains(&i) {FlexDirection::Column} else {FlexDirection::Row},width:percent(100),min_height:px(56),flex_shrink:0.,padding:UiRect::axes(px(18),px(12)),align_items:AlignItems::Center,border_radius:BorderRadius::all(px(4)),..default()},BackgroundColor(Color::srgb(0.075,0.09,0.095))))
                             .with_children(|row| {
                                 row.spawn((MenuLabel(i),Text::new(""),TextFont {font_size:18.,..default()},TextColor(Color::WHITE)));
@@ -341,6 +374,7 @@ fn setup(
 }
 /// GRAPHICS-section rows for the game_audio volume settings.
 const FRAME_STATS_ROW: usize = 28;
+const SHADOW_ROW: usize = 29;
 const AUDIO_ROWS: std::ops::Range<usize> = 16..19;
 fn audio_row(row: usize) -> crate::game_audio::AudioRow {
     use crate::game_audio::AudioRow;
@@ -447,7 +481,7 @@ pub(crate) fn interact(
         if keys.just_pressed(KeyCode::ArrowDown) || nav.pressed & 2 != 0 {
             menu.selected = visible[(index + 1) % rows];
         }
-        let adjustable = (menu.section == 1 && menu.difficulty == Difficulty::Custom && (300..335).contains(&menu.selected)) || (menu.daylight && menu.selected < 3) || (!menu.multiplayer && !menu.daylight && (menu.selected < 4 || AUDIO_ROWS.contains(&menu.selected) || menu.selected == FRAME_STATS_ROW))
+        let adjustable = (menu.section == 1 && menu.difficulty == Difficulty::Custom && (300..335).contains(&menu.selected)) || (menu.daylight && menu.selected < 3) || (!menu.multiplayer && !menu.daylight && (menu.selected < 4 || AUDIO_ROWS.contains(&menu.selected) || menu.selected == FRAME_STATS_ROW || menu.selected == SHADOW_ROW))
             || (!menu.multiplayer && !menu.daylight && menu.section == 1 && menu.selected == CAMERA_ANGLE_ROW);
         if adjustable && (keys.just_pressed(KeyCode::ArrowLeft) || nav.pressed & 4 != 0) {
             action = Some((menu.selected, -1));
@@ -625,10 +659,11 @@ pub(crate) fn interact(
                 14 => mods.begin(),
                 16..=18 => menu.status = audio.adjust(audio_row(row), direction),
                 FRAME_STATS_ROW => menu.settings.frame_stats = !menu.settings.frame_stats,
+                SHADOW_ROW => menu.settings.shadow_quality = cycle(&ShadowQuality::ALL, menu.settings.shadow_quality, direction),
                 _ => {}
             }
         }
-        if ((row < 3 || row == FRAME_STATS_ROW) && !menu.multiplayer && !menu.daylight && !day_action) || (day_action && row < 3) {
+        if ((row < 3 || row == FRAME_STATS_ROW || row == SHADOW_ROW) && !menu.multiplayer && !menu.daylight && !day_action) || (day_action && row < 3) {
             let save = (|| -> Result<(), String> {
                 std::fs::create_dir_all(menu.path.parent().unwrap()).map_err(|e| e.to_string())?;
                 std::fs::write(
@@ -872,6 +907,7 @@ fn labels(
                 14 => "Mods".into(),
                 16..=18 => audio.as_ref().map(|a| a.label(audio_row(label.0))).unwrap_or_default(),
                 19 => controller_label(&debug.3),
+                SHADOW_ROW => format!("Shadow quality       {}", s.shadow_quality.label()),
                 FRAME_STATS_ROW => format!("Frame-time counter    {}", if s.frame_stats { "On" } else { "Off" }),
                 _ => "Multiplayer".into(),
             }
@@ -1071,7 +1107,7 @@ mod tests {
             assert!(rows.contains(&menu.selected));
             assert!(rows.windows(2).all(|pair| pair[0] < pair[1]));
             // Audio, controller identity, and frame-time rows are spawned.
-            assert!(rows.iter().all(|id| *id < 20 || *id == FRAME_STATS_ROW || *id >= 1000));
+            assert!(rows.iter().all(|id| *id < 20 || *id == FRAME_STATS_ROW || *id == SHADOW_ROW || *id >= 1000));
         }
         menu.select_section(1);
         assert_eq!(menu.rows(),vec![3,CAMERA_ANGLE_ROW,8,10]);
@@ -1106,7 +1142,7 @@ mod tests {
         assert!(!SECTIONS.iter().any(|(name,_)| matches!(*name,"SESSION"|"WORLD")));
         menu.select_section(2);
         assert!(!menu.multiplayer && !menu.browser);
-        assert_eq!(menu.rows(), vec![0,1,2,13,16,17,18,FRAME_STATS_ROW]);
+        assert_eq!(menu.rows(), vec![0,1,2,13,16,17,18,FRAME_STATS_ROW,SHADOW_ROW]);
         menu.daylight = true;
         assert_eq!(menu.rows(), vec![0,1,2,3]);
     }

@@ -69,8 +69,18 @@ pub(crate) fn build(
             bevy::asset::io::AssetSourceBuilder::new(move || crate::std_fs_reader::local(root.clone())),
         );
     }
+    // Android debugging switch (settings/graphics.json "gpu_culling"); desktop always on.
+    let gpu_culling = cfg!(not(target_os = "android"))
+        || crate::graphics_menu::saved_gpu_culling(&config.asset_root);
+    if !gpu_culling {
+        warn!("gpu_culling is off: GPU mesh preprocessing and indirect drawing are disabled");
+    }
     app.add_plugins(
         DefaultPlugins
+            .set(bevy::pbr::PbrPlugin {
+                use_gpu_instance_buffer_builder: gpu_culling,
+                ..default()
+            })
             .set(AssetPlugin {
                 file_path: config.asset_root.to_string_lossy().into_owned(),
                 ..default()
@@ -153,6 +163,7 @@ pub(crate) fn build(
         verification::VerificationPlugin,
         crate::performance::PerformancePlugin,
     ));
+    app.add_plugins(crate::render_caps::RenderCapsPlugin);
     app.add_plugins((crate::session_marker::SessionMarkerPlugin, crate::customiser::CustomiserPlugin));
     app.add_plugins(crate::custom_models::CustomModelsPlugin);
     app.add_plugins(crate::trigger_volumes::TriggerVolumesPlugin);
@@ -166,7 +177,7 @@ pub(crate) fn build(
     app.add_plugins(crate::ui_audio::UiAudioPlugin);
     app.add_plugins(crate::game_audio::GameAudioPlugin);
     #[cfg(target_os = "android")]
-    app.add_plugins(crate::android_lifecycle::AndroidLifecyclePlugin);
+    app.add_plugins((crate::android_lifecycle::AndroidLifecyclePlugin, crate::android_perf::AndroidPerfPlugin));
     app.add_systems(Last, crate::crash_context::sample);
     crate::profiling::install(&mut app);
     app
