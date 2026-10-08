@@ -1,5 +1,7 @@
 //! Each portable copy owns its installation; explicit --assets is for development.
-use std::{path::{Path, PathBuf}, process::Command};
+use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "android"))]
+use std::process::Command;
 
 fn installed(base: &Path) -> Result<Option<(PathBuf, serde_json::Value)>, String> {
     let bytes = match std::fs::read(base.join("installation.json")) {
@@ -145,9 +147,26 @@ pub(crate) fn asset_root() -> Result<PathBuf, String> {
             path.display()
         ));
     }
+    #[cfg(target_os = "android")]
+    return android_asset_root(&crate::platform_paths::get().data_dir);
+    #[cfg(not(target_os = "android"))]
+    desktop_asset_root()
+}
+
+/// Imported data: an `installation.json` marker, else a pushed `assets` folder.
+#[cfg(target_os = "android")]
+fn android_asset_root(data: &Path) -> Result<PathBuf, String> {
+    if let Some((assets, _)) = installed(data)? { return Ok(assets); }
+    let assets = data.join("assets");
+    if assets.join("private/game.json").is_file() { return Ok(assets); }
+    Err("No game data imported".into())
+}
+
+#[cfg(not(target_os = "android"))]
+fn desktop_asset_root() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let root = exe.parent().ok_or("No executable directory")?;
-    let base = root.join("data");
+    let base = crate::platform_paths::get().data_dir.clone();
     let mut expected_customiser = None;
     let mut equivalence = None;
     let expected = match std::fs::read(root.join("release.json")) {

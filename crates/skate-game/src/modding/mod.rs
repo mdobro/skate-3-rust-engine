@@ -25,7 +25,7 @@ pub(crate) mod player_physics;
 pub(crate) use menu::ModMenu;
 
 use bevy::{
-    asset::io::{AssetSourceBuilder, file::FileAssetReader},
+    asset::io::AssetSourceBuilder,
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
@@ -210,19 +210,12 @@ pub(crate) fn register_source(app: &mut App) {
     let root = package_root();
     app.register_asset_source(
         "mods",
-        AssetSourceBuilder::new(move || Box::new(FileAssetReader::new(root.clone()))),
+        AssetSourceBuilder::new(move || crate::std_fs_reader::local(root.clone())),
     );
 }
 
 pub(crate) fn package_root() -> std::path::PathBuf {
-    std::env::var_os("SKATE3_MODS")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|p| p.join("mods")))
-                .unwrap_or_else(|| "mods".into())
-        })
+    crate::platform_paths::get().mods_dir.clone()
 }
 
 pub(crate) fn player_attached(mods: &Mods) -> bool {

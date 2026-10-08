@@ -2,7 +2,7 @@
 use bevy::{
     asset::{
         LoadState,
-        io::{AssetSourceBuilder, file::FileAssetReader},
+        io::AssetSourceBuilder,
     },
     gltf::Gltf,
     input::mouse::{MouseScrollUnit, MouseWheel},
@@ -137,18 +137,15 @@ impl CustomModels {
     }
 }
 pub(crate) fn library_path() -> PathBuf {
-    std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("Skate3RustEngine/custom-characters")
+    crate::platform_paths::get().custom_characters_dir.clone()
 }
 pub(crate) fn register_source(app: &mut App) {
     let cache = crate::multiplayer::appearance::cache_directory().to_owned();
-    app.register_asset_source("online-characters", AssetSourceBuilder::new(move || Box::new(FileAssetReader::new(cache.clone()))));
+    app.register_asset_source("online-characters", AssetSourceBuilder::new(move || crate::std_fs_reader::local(cache.clone())));
     let directory = library_path();
     app.register_asset_source(
         "characters",
-        AssetSourceBuilder::new(move || Box::new(FileAssetReader::new(directory.clone()))),
+        AssetSourceBuilder::new(move || crate::std_fs_reader::local(directory.clone())),
     );
 }
 fn valid_id(id: &str) -> bool {
@@ -381,6 +378,8 @@ fn interact(
     }
 }
 fn start_import(directory: &Path, reference: &Path) -> Result<Import, String> {
+    #[cfg(target_os = "android")]
+    return Err("Importing characters is not available on Android".into());
     let executable = std::env::current_exe()
         .map_err(|e| e.to_string())?
         .parent()

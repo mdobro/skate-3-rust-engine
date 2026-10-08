@@ -2,7 +2,7 @@ use bevy::prelude::Resource;
 use std::path::PathBuf;
 
 #[derive(Resource)]
-pub(crate) struct Config {
+pub struct Config {
     pub asset_root: PathBuf,
     pub verification_capture: Option<PathBuf>,
     pub map: Option<skate_data::skate_map::SkateMap>,
@@ -21,8 +21,18 @@ pub(crate) struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, String> {
+        Self::from_args(crate::setup::asset_root()?, std::env::args_os().skip(1))
+    }
+
+    /// Android has no argv: defaults plus the imported asset root.
+    /// The asset root comes from the installed `PlatformPaths`.
+    pub fn for_android() -> Result<Self, String> {
+        Self::from_args(crate::setup::asset_root()?, std::iter::empty())
+    }
+
+    fn from_args(asset_root: PathBuf, args: impl Iterator<Item = std::ffi::OsString>) -> Result<Self, String> {
         let mut config = Self {
-            asset_root: crate::setup::asset_root()?,
+            asset_root,
             verification_capture: None,
             map: None,
             map_path: None,
@@ -37,7 +47,7 @@ impl Config {
         };
         let mut difficulty_override = None;
         let mut explicit_map = false;
-        let mut args = std::env::args_os().skip(1);
+        let mut args = args;
         while let Some(arg) = args.next() {
             match arg.to_str() {
                 Some("--trace" | "--trace-seconds" | "--trace-delay" | "--trace-min-us") => { args.next().ok_or("Trace option requires a value")?; }

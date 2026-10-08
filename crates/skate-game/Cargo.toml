@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[lib]
+name = "skate_game"
+path = "src/lib.rs"
+
 [[bin]]
 name = "skate3rust"
 path = "src/main.rs"
@@ -36,8 +40,13 @@ skate-mods = { path = "../skate-mods" }
 skate-dynamics = { path = "../skate-dynamics" }
 skate-audio = { path = "../skate-audio" }
 gltf = { version = "=1.4.1", default-features = true }
-# SDL3 gamepad input for every platform, built from source and statically linked.
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+# SDL3 gamepad input on desktop, built from source and statically linked.
 sdl3 = { version = "=0.20.0", features = ["build-from-source-static"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_log-sys = "0.3"
 
 [dev-dependencies]
 naga = { version = "=27.0.3", features = ["wgsl-in"] }

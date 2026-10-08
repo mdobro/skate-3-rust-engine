@@ -284,13 +284,17 @@ fn input(
             let program = "explorer.exe";
             #[cfg(target_os = "macos")]
             let program = "open";
-            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+            #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "android")))]
             let program = "xdg-open";
-            std::process::Command::new(program)
+            #[cfg(target_os = "android")]
+            let result: Result<(), String> = Err("Opening the mods folder is not available on Android".into());
+            #[cfg(not(target_os = "android"))]
+            let result = std::process::Command::new(program)
                 .arg(mods.manager.root())
                 .spawn()
                 .map(|_| ())
-                .map_err(|e| format!("Could not open mods folder: {e}"))
+                .map_err(|e| format!("Could not open mods folder: {e}"));
+            result
         }
         Action::Scan => {
             mods.manager.scan(true);

@@ -7,7 +7,7 @@ pub(crate) const NATIVE_MODES: [&str; 5] = ["easy", "normal", "hardcore", "motor
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[repr(u32)]
-pub(crate) enum Difficulty {
+pub enum Difficulty {
     #[default]
     Easy = 0,
     Normal = 1,

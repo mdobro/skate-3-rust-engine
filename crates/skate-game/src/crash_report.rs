@@ -206,6 +206,22 @@ fn reader(
     })
 }
 
+/// Android has no supervisor process: record panics in app storage and logcat.
+#[cfg(target_os = "android")]
+pub(crate) fn entry() -> Option<i32> {
+    let dir = crate::platform_paths::get().crash_dir.clone();
+    std::panic::set_hook(Box::new(move |info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        let text = format!("{info}\n\n{backtrace}\n");
+        bevy::log::error!("panic: {text}");
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(dir.join(format!("crash-{stamp}.txt")), text);
+    }));
+    None
+}
+
+#[cfg(not(target_os = "android"))]
 pub(crate) fn entry() -> Option<i32> {
     if std::env::var_os(CHILD).is_some() {
         // Entry runs before game threads. Do not let setup/relay descendants
@@ -364,16 +380,15 @@ fn report(capture: &Capture, outcome: &str, elapsed: f64) -> String {
 }
 
 fn save(text: &str) -> std::io::Result<PathBuf> {
+    let paths = crate::platform_paths::get();
     let roots = [
-        std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir),
-        std::env::temp_dir(),
+        paths.crash_dir.clone(),
+        std::env::temp_dir().join("Skate3RustEngine/CrashReports"),
     ];
     let mut error = None;
     for root in roots {
         let result = (|| {
-            let folder = root.join("Skate3RustEngine/CrashReports");
+            let folder = root;
             std::fs::create_dir_all(&folder)?;
             let stamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)

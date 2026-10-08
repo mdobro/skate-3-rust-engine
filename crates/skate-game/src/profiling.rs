@@ -24,6 +24,42 @@ use std::{
     time::Instant,
 };
 
+/// Writes formatted log lines to logcat under the tag `skate3`.
+#[cfg(target_os = "android")]
+mod logcat {
+    use bevy::log::tracing_subscriber::fmt::MakeWriter;
+    use std::ffi::CString;
+
+    pub(super) struct Logcat;
+    pub(super) struct Line(Vec<u8>);
+
+    impl<'a> MakeWriter<'a> for Logcat {
+        type Writer = Line;
+        fn make_writer(&'a self) -> Line {
+            Line(Vec::new())
+        }
+    }
+    impl std::io::Write for Line {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl Drop for Line {
+        fn drop(&mut self) {
+            let text = String::from_utf8_lossy(&self.0).replace('\0', "");
+            let text = text.trim_end();
+            let (Ok(tag), Ok(text)) = (CString::new("skate3"), CString::new(text)) else { return };
+            unsafe {
+                android_log_sys::__android_log_write(android_log_sys::LogPriority::INFO as i32, tag.as_ptr(), text.as_ptr());
+            }
+        }
+    }
+}
+
 /// Set once by `init()` so `install()` can reach the same capture state without
 /// threading it through `main`'s return type.
 static CAPTURE: OnceLock<&'static Capture> = OnceLock::new();
@@ -192,8 +228,15 @@ pub(crate) fn init() -> Result<Guard, String> {
     // ever opens.
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,wgpu=warn,naga=warn,bevy_render=info"));
+    #[cfg(not(target_os = "android"))]
     let stderr = bevy::log::tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
+        .with_target(false);
+    #[cfg(target_os = "android")]
+    let stderr = bevy::log::tracing_subscriber::fmt::layer()
+        .with_writer(logcat::Logcat)
+        .with_ansi(false)
+        .without_time()
         .with_target(false);
 
     let Some(options) = options()? else {

@@ -34,7 +34,7 @@ pub(crate) fn unique() -> u64 {
     )
 }
 #[derive(Default)]
-pub(crate) struct Options {
+pub struct Options {
     pub direct: Option<(SocketAddr, SocketAddr)>,
     pub host: Option<SocketAddr>,
     pub session: u64,

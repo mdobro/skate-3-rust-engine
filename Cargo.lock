@@ -4841,6 +4841,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
+name = "skate-android"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "jni 0.21.1",
+ "skate-data",
+ "skate-game",
+]
+
+[[package]]
 name = "skate-audio"
 version = "0.1.0"
 dependencies = [
@@ -4879,6 +4889,7 @@ dependencies = [
 name = "skate-game"
 version = "0.1.0"
 dependencies = [
+ "android_log-sys",
  "bevy",
  "blake3",
  "gltf",

@@ -61,12 +61,12 @@ pub(crate) fn sample(
     }
     if !previous.gpu_recorded {
         if let Some(adapter) = adapter {
-            eprintln!("REPORT_META gpu={:?}", &**adapter);
+            report_meta!("gpu={:?}", &**adapter);
             previous.gpu_recorded = true;
         }
     }
     if let Some(multiplayer) = &multiplayer {
-        eprintln!("REPORT_META network={}", multiplayer.diagnostic_summary());
+        report_meta!("network={}", multiplayer.diagnostic_summary());
     }
     let state = format!(
         "map_fingerprint:{:016x} generation:{} difficulty:{} physical:{:?} paused:{} map_loading:{} multiplayer_active:{} physics_failed:{}",
@@ -83,14 +83,14 @@ pub(crate) fn sample(
         eprintln!("REPORT_TRANSITION {state}");
         previous.state = state.clone();
     }
-    eprintln!(
-        "REPORT_META state={state} physics_tick:{} contacts:{} network_contacts:{}",
+    report_meta!(
+        "state={state} physics_tick:{} contacts:{} network_contacts:{}",
         physics.ticks, physics.contact_count, physics.network_contacts
     );
     if let Some(menu) = menu {
         let graphics = menu.diagnostic_settings();
         if graphics != previous.graphics {
-            eprintln!("REPORT_META graphics={graphics}");
+            report_meta!("graphics={graphics}");
             previous.graphics = graphics;
         }
     }

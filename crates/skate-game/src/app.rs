@@ -60,6 +60,15 @@ pub(crate) fn build(
     let mut app = App::new();
     crate::custom_models::register_source(&mut app);
     crate::modding::register_source(&mut app);
+    // The APK AssetManager cannot serve imported game data.
+    #[cfg(target_os = "android")]
+    {
+        let root = config.asset_root.clone();
+        app.register_asset_source(
+            bevy::asset::io::AssetSourceId::Default,
+            bevy::asset::io::AssetSourceBuilder::new(move || crate::std_fs_reader::local(root.clone())),
+        );
+    }
     app.add_plugins(
         DefaultPlugins
             .set(AssetPlugin {

@@ -98,6 +98,8 @@ pub(super) struct Steam {
 }
 impl Steam {
     pub fn new(peer: u64, session: u64) -> Result<Self, String> {
+        #[cfg(target_os = "android")]
+        return Err("Steam relay is not available on Android; direct multiplayer remains available".into());
         let socket = UdpSocket::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
         skate_net::socket::configure(&socket).map_err(|e| e.to_string())?;
         let dir = std::env::current_exe()

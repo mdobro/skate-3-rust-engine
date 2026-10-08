@@ -292,6 +292,7 @@ pub(crate) fn xinput_identity(index: u32) -> Option<ControllerKind> {
     windows::identity(index)
 }
 
+#[cfg(not(target_os = "android"))]
 mod sdl {
     use super::*;
     use crate::input::controller_kind;
@@ -474,6 +475,7 @@ mod sdl {
 }
 
 enum Backend {
+    #[cfg(not(target_os = "android"))]
     Sdl(&'static sdl::Shared),
     #[cfg(windows)]
     XInput,
@@ -489,6 +491,9 @@ fn backend() -> &'static Backend {
             bevy::log::info!("Controller input: XInput (SKATE3_INPUT=xinput)");
             return Backend::XInput;
         }
+        #[cfg(target_os = "android")]
+        return Backend::Unavailable;
+        #[cfg(not(target_os = "android"))]
         match sdl::start() {
             Ok(shared) => Backend::Sdl(shared),
             #[cfg(windows)]
@@ -511,6 +516,7 @@ pub(crate) fn poll_cached(
 ) -> Result<DevicePacket, DeviceError> {
     assert!(index < 4);
     match backend() {
+        #[cfg(not(target_os = "android"))]
         Backend::Sdl(shared) => {
             let _ = cache;
             sdl::poll(shared, index)
