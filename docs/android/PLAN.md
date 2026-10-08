@@ -9,6 +9,11 @@ The engine (Rust 2024 + Bevy 0.18.1, with `crates/skate-game` as the binary) onl
 
 The goal is an Android APK that plays the game natively with a **Backbone** controller on a **Snapdragon 8 Gen 2 or newer** phone (Adreno 740+, 8–12 GB RAM).
 
+**Primary test device: Samsung Galaxy S26 Ultra** (Snapdragon 8 Elite for Galaxy, recent Adreno, 12 GB+ RAM). Notes for this device:
+- The S26 Ultra's GPU and memory are comfortably above the target, so Phase 4 should mostly mean tuning, not cutting features.
+- Samsung Game Booster and Game Launcher can throttle or cap frame rate. Test both with and without them.
+- The Backbone may connect over USB-C or Bluetooth, depending on the model. Android reports both as the same kind of gamepad through `InputManager`, so Phase 3 handles both. Log the vendor and product IDs for both connections.
+
 **Game data:** the ISO is converted **on the PC** with the existing setup, which is faster and already works. The app then imports that converted asset set. The app ships no EA assets and never downloads any; the third-party zip link is not wired in.
 
 **Why native instead of the existing web port:** the engine needs things a browser limits:
