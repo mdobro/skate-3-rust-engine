@@ -15,6 +15,8 @@ use serde::Serialize;
 pub(crate) enum Backend {
     Sdl,
     Xinput,
+    /// Android `InputDevice`, fed over JNI by `GamepadBridge`.
+    Android,
 }
 
 /// Coarse controller kind. Stable snake_case names are the mod-facing form.
@@ -145,6 +147,7 @@ impl ControllerKind {
                 self.xinput_subtype.unwrap_or(0),
                 if self.wireless == Some(true) { " wireless" } else { "" }
             ),
+            Backend::Android => format!(", Android via {}", if self.driver.is_empty() { "?" } else { &self.driver }),
         };
         if self.hardware_paddles > 0 || self.paddles > 0 {
             text += &format!(", paddles {} of {}", self.paddles, self.hardware_paddles.max(self.paddles));
@@ -166,6 +169,7 @@ pub(crate) struct Model {
 const MICROSOFT: u16 = 0x045e;
 const SONY: u16 = 0x054c;
 const NINTENDO: u16 = 0x057e;
+const BACKBONE: u16 = 0x358a;
 
 /// Default model table (public USB IDs). `settings/controller.json` `models`
 /// entries are looked up first, so users can name pads this table lacks.
@@ -283,6 +287,43 @@ pub(crate) fn from_sdl(report: SdlReport, user: &[Model]) -> ControllerKind {
         hardware_paddles: model.map_or(0, |m| m.paddles),
         touchpad: report.touchpad,
         misc_button: report.misc_button,
+        prompt_style: family.prompt_style(),
+    }
+}
+
+/// Android `InputDevice` identity (vendor/product may be 0 when unknown).
+/// `device_id` is Android's opaque device id, kept in the driver string only.
+/// Pads absent from the model table are `Standard`; any Backbone Labs pad
+/// (vendor 0x358a, every product id) is an Xbox-layout pad named "Backbone One".
+pub(crate) fn from_android(name: &str, vendor: u16, product: u16, device_id: i32, user: &[Model]) -> ControllerKind {
+    let known = (vendor != 0).then(|| model(user, vendor, product)).flatten().or_else(|| {
+        (vendor == BACKBONE).then(|| Model {
+            vendor,
+            product,
+            name: "Backbone One".into(),
+            family: Some(Family::XboxOne),
+            paddles: 0,
+        })
+    });
+    let family = known.as_ref().and_then(|m| m.family).unwrap_or(Family::Standard);
+    let name = match (name.trim(), &known) {
+        ("", Some(m)) => m.name.clone(),
+        ("", None) => family.name().to_string(),
+        (reported, _) => reported.to_string(),
+    };
+    ControllerKind {
+        family,
+        name,
+        vendor_id: (vendor != 0).then_some(vendor),
+        product_id: (vendor != 0).then_some(product),
+        backend: Backend::Android,
+        driver: format!("android#{device_id}"),
+        xinput_subtype: None,
+        wireless: None,
+        paddles: 0,
+        hardware_paddles: known.map_or(0, |m| m.paddles),
+        touchpad: false,
+        misc_button: false,
         prompt_style: family.prompt_style(),
     }
 }

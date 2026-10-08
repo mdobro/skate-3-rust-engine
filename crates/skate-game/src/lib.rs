@@ -84,6 +84,9 @@ pub mod platform_paths;
 #[allow(dead_code)]
 mod std_fs_reader;
 pub use config::Config;
+/// Android gamepad entry points for the JNI layer (`skate-android`).
+#[cfg(target_os = "android")]
+pub use input::platform::android as android_input;
 
 pub struct Launch {
     pub config: Config,

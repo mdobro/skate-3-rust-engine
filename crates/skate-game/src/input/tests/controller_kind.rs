@@ -162,3 +162,35 @@ fn xinput_identity_of_connected_pad() {
     }
     assert!(kinds.iter().any(Option::is_some), "no XInput pad connected");
 }
+
+#[test]
+fn android_backbone_is_xbox_layout_for_any_product_id() {
+    for product in [0x0001, 0xbeef] {
+        let kind = from_android("Backbone One", 0x358a, product, 7, &[]);
+        assert_eq!((kind.family, kind.prompt_style, kind.backend), (Family::XboxOne, PromptStyle::Xbox, Backend::Android));
+        assert_eq!((kind.vendor_id, kind.product_id), (Some(0x358a), Some(product)));
+        assert_eq!(kind.driver, "android#7");
+        let summary = kind.summary();
+        assert!(summary.starts_with("Backbone One [Xbox One / Series] 358a:") && summary.ends_with("Android via android#7"), "{summary}");
+    }
+    // An empty reported name falls back to the table name.
+    assert_eq!(from_android("", 0x358a, 1, 1, &[]).name, "Backbone One");
+}
+
+#[test]
+fn android_known_microsoft_pad_uses_table_and_unknown_pad_is_standard() {
+    let xbox = from_android("Controller", 0x045e, 0x0b13, 2, &[]);
+    assert_eq!((xbox.family, xbox.name.as_str()), (Family::XboxOne, "Controller"));
+    let unknown = from_android("Cheap Pad", 0x1234, 0x5678, 3, &[]);
+    assert_eq!((unknown.family, unknown.name.as_str()), (Family::Standard, "Cheap Pad"));
+    let bare = from_android("", 0, 0, 4, &[]);
+    assert_eq!((bare.name.as_str(), bare.vendor_id, bare.product_id), ("Standard gamepad", None, None));
+    assert!(bare.summary().contains("Android via android#4"));
+}
+
+#[test]
+fn android_user_models_override_the_backbone_fallback() {
+    let user = [Model { vendor: 0x358a, product: 9, name: "Mine".into(), family: Some(Family::Playstation5), paddles: 2 }];
+    let kind = from_android("", 0x358a, 9, 1, &user);
+    assert_eq!((kind.family, kind.name.as_str(), kind.hardware_paddles), (Family::Playstation5, "Mine", 2));
+}

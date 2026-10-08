@@ -474,12 +474,130 @@ mod sdl {
     }
 }
 
+/// Android `GamepadBridge` values to `XboxState`. Kotlin already sends XInput
+/// bits, up-positive Y (negated from Android's down-positive axes) and trigger
+/// bytes; this only clamps to the field ranges. Sticks are [lx, ly, rx, ry].
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+pub(crate) fn android_state(buttons: u16, sticks: [i32; 4], triggers: [i32; 2]) -> XboxState {
+    let axis = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+    let trigger = |v: i32| v.clamp(0, 255) as u8;
+    XboxState {
+        buttons,
+        triggers: triggers.map(trigger),
+        left: [axis(sticks[0]), axis(sticks[1])],
+        right: [axis(sticks[2]), axis(sticks[3])],
+    }
+}
+
+/// Android gamepads. `GamepadBridge` pushes state over JNI; slots are assigned
+/// in connect order (first free of four) and keyed by Android's opaque device id.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub mod android {
+    use super::*;
+    use crate::input::controller_kind;
+    use bevy::log::{info, warn};
+    use std::sync::Mutex;
+
+    type Published = Option<(u32, XboxState, Arc<ControllerKind>)>;
+
+    #[derive(Default)]
+    struct Slots {
+        /// Latest (packet number, state, identity) per slot.
+        published: [Published; 4],
+        /// Android device id owning each slot.
+        ids: [Option<i32>; 4],
+    }
+
+    #[derive(Default)]
+    pub(crate) struct Shared {
+        slots: Mutex<Slots>,
+    }
+
+    /// SDL only opens devices it maps as gamepads; the same subtype here.
+    const SUBTYPE_GAMEPAD: u8 = 1;
+
+    impl Shared {
+        fn lock(&self) -> std::sync::MutexGuard<'_, Slots> {
+            self.slots.lock().unwrap_or_else(|e| e.into_inner())
+        }
+
+        pub(crate) fn connected(&self, device_id: i32, name: &str, vendor: u16, product: u16, user: &[controller_kind::Model]) {
+            let mut slots = self.lock();
+            if slots.ids.contains(&Some(device_id)) {
+                return;
+            }
+            let Some(index) = slots.ids.iter().position(Option::is_none) else {
+                return warn!("Android gamepad {device_id}: all four controller slots are in use");
+            };
+            let kind = Arc::new(controller_kind::from_android(name, vendor, product, device_id, user));
+            info!("Controller {index}: identified as {} (Android device {device_id}, name {name:?})", kind.summary());
+            slots.ids[index] = Some(device_id);
+            slots.published[index] = Some((0, XboxState::default(), kind));
+        }
+
+        pub(crate) fn disconnected(&self, device_id: i32) {
+            let mut slots = self.lock();
+            if let Some(index) = slots.ids.iter().position(|&id| id == Some(device_id)) {
+                slots.ids[index] = None;
+                slots.published[index] = None;
+                info!("Controller {index}: Android gamepad {device_id} removed");
+            }
+        }
+
+        pub(crate) fn state(&self, device_id: i32, state: XboxState) {
+            let mut slots = self.lock();
+            let Some(index) = slots.ids.iter().position(|&id| id == Some(device_id)) else { return };
+            if let Some((number, current, _)) = slots.published[index].as_mut() {
+                // Mirrors XInput dwPacketNumber: advances only when state changes.
+                if *current != state {
+                    *number = number.wrapping_add(1);
+                    *current = state;
+                }
+            }
+        }
+
+        pub(super) fn poll(&self, index: usize) -> Result<DevicePacket, DeviceError> {
+            self.lock().published[index]
+                .as_ref()
+                .map(|(number, state, kind)| DevicePacket {
+                    number: *number,
+                    state: *state,
+                    subtype: SUBTYPE_GAMEPAD,
+                    kind: Some(kind.clone()),
+                })
+                .ok_or(DeviceError::Disconnected)
+        }
+    }
+
+    pub(super) fn shared() -> &'static Shared {
+        static SHARED: OnceLock<Shared> = OnceLock::new();
+        SHARED.get_or_init(Shared::default)
+    }
+
+    /// A gamepad appeared (or `onResume` re-announced it). Idempotent per id.
+    pub fn connected(device_id: i32, name: &str, vendor: u16, product: u16) {
+        shared().connected(device_id, name, vendor, product, controller_kind::user_models());
+    }
+
+    pub fn disconnected(device_id: i32) {
+        shared().disconnected(device_id);
+    }
+
+    /// Latest pad state; ignored for ids that are not connected.
+    pub fn state(device_id: i32, buttons: u16, lx: i16, ly: i16, rx: i16, ry: i16, lt: u8, rt: u8) {
+        let sticks = [lx, ly, rx, ry].map(i32::from);
+        shared().state(device_id, android_state(buttons, sticks, [lt, rt].map(i32::from)));
+    }
+}
+
 enum Backend {
+    #[cfg(target_os = "android")]
+    Android(&'static android::Shared),
     #[cfg(not(target_os = "android"))]
     Sdl(&'static sdl::Shared),
     #[cfg(windows)]
     XInput,
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(target_os = "android")))]
     Unavailable,
 }
 
@@ -492,7 +610,7 @@ fn backend() -> &'static Backend {
             return Backend::XInput;
         }
         #[cfg(target_os = "android")]
-        return Backend::Unavailable;
+        return Backend::Android(android::shared());
         #[cfg(not(target_os = "android"))]
         match sdl::start() {
             Ok(shared) => Backend::Sdl(shared),
@@ -516,6 +634,11 @@ pub(crate) fn poll_cached(
 ) -> Result<DevicePacket, DeviceError> {
     assert!(index < 4);
     match backend() {
+        #[cfg(target_os = "android")]
+        Backend::Android(shared) => {
+            let _ = cache;
+            shared.poll(index)
+        }
         #[cfg(not(target_os = "android"))]
         Backend::Sdl(shared) => {
             let _ = cache;
@@ -523,7 +646,7 @@ pub(crate) fn poll_cached(
         }
         #[cfg(windows)]
         Backend::XInput => windows::poll(index as u32, cache),
-        #[cfg(not(windows))]
+        #[cfg(all(not(windows), not(target_os = "android")))]
         Backend::Unavailable => Err(DeviceError::Unavailable),
     }
 }
@@ -599,3 +722,7 @@ mod cache_tests {
 pub(crate) fn poll(index: usize) -> Result<DevicePacket, DeviceError> {
     poll_cached(index, &mut CapabilityCache::default())
 }
+
+#[cfg(test)]
+#[path = "tests/android.rs"]
+mod android_tests;

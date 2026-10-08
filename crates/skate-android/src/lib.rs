@@ -1,5 +1,6 @@
 #![cfg(target_os = "android")]
 //! Android entry point: `GameActivity` loads this library and calls `android_main`.
+mod gamepad;
 use jni::{
     JNIEnv,
     objects::{JClass, JString},
