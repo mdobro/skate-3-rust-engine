@@ -93,9 +93,15 @@ def main():
         return 0
     parser=argparse.ArgumentParser()
     parser.add_argument('--base',type=Path,required=True)
-    parser.add_argument('--game-exe',type=Path,required=True)
+    parser.add_argument('--game-exe',type=Path)
     parser.add_argument('--refresh',action='store_true')
+    parser.add_argument('--export-android',type=Path,metavar='OUT')
+    parser.add_argument('--exclude-speech',action='store_true',help='with --export-android: drop decoded speech audio')
     args=parser.parse_args()
+    if args.export_android:
+        from tools.export_android import export
+        export(args.base,args.export_android,exclude_speech=args.exclude_speech);return 0
+    if args.game_exe is None:parser.error('--game-exe is required')
     if enable_long_paths():return restart()
     import tkinter as tk
     from tkinter import filedialog,messagebox,ttk
@@ -148,6 +154,25 @@ def main():
         else:window.destroy()
     buttons=ttk.Frame(frame);buttons.pack(anchor='e',pady=18)
     button=ttk.Button(buttons,text='Select ISO or default.xex',command=start);button.pack(side='left')
+    def export_android():
+        nonlocal running
+        from tools.asset_pipeline.versions import installed
+        from tools.export_android import export
+        if running:return
+        if installed(args.base) is None:
+            messagebox.showinfo('Export for Android','Set up the game first.',parent=window);return
+        out=filedialog.asksaveasfilename(parent=window,title='Export game data for Android',defaultextension='.zip',
+            initialfile='skate3-android.zip',filetypes=[('Zip archive','*.zip')])
+        if not out:return
+        button.config(state='disabled');export_button.config(state='disabled');running=True;progress.start()
+        def work():
+            try:
+                export(args.base,Path(out),lambda text:messages.put(('progress',text)))
+                messages.put(('exported','Exported to '+out))
+            except Exception as error:messages.put(('error',str(error)))
+        threading.Thread(target=work,daemon=True).start()
+    export_button=ttk.Button(buttons,text='Export for Android',command=export_android)
+    if installed(args.base) is not None:export_button.pack(side='left',padx=(8,0))
     def poll():
         nonlocal running,success
         while not messages.empty():
@@ -155,8 +180,10 @@ def main():
             if kind=='done':
                 if text!='Ready':messagebox.showwarning('Setup completed with warnings',text,parent=window)
                 running=False;success=True;progress.stop();window.destroy();return
+            if kind=='exported':
+                running=False;progress.stop();button.config(state='normal');export_button.config(state='normal')
             if kind=='error':
-                running=False;progress.stop();button.config(state='normal')
+                running=False;progress.stop();button.config(state='normal');export_button.config(state='normal')
                 if reuse and text:
                     status.set('Could not reuse the previous Xbox source. Select default.xex or an ISO.')
                 messagebox.showerror('Setup could not finish',text+'\n\nDetails: '+str(args.base/'setup-error.log'),parent=window)

@@ -77,3 +77,51 @@ fn compress(state: &mut [u32; 8], block: &[u8]) {
         *s = s.wrapping_add(v);
     }
 }
+/// Incremental SHA-256 for files too large to hold in memory.
+pub(crate) struct Hasher {
+    state: [u32; 8],
+    buf: Vec<u8>,
+    len: u64,
+}
+impl Hasher {
+    pub(crate) fn new() -> Self {
+        Self {
+            state: [
+                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+                0x5be0cd19,
+            ],
+            buf: Vec::with_capacity(64),
+            len: 0,
+        }
+    }
+    pub(crate) fn update(&mut self, mut bytes: &[u8]) {
+        self.len += bytes.len() as u64;
+        if !self.buf.is_empty() {
+            let take = (64 - self.buf.len()).min(bytes.len());
+            self.buf.extend_from_slice(&bytes[..take]);
+            bytes = &bytes[take..];
+            if self.buf.len() < 64 {
+                return;
+            }
+            compress(&mut self.state, &self.buf);
+            self.buf.clear();
+        }
+        let mut blocks = bytes.chunks_exact(64);
+        for block in &mut blocks {
+            compress(&mut self.state, block);
+        }
+        self.buf.extend_from_slice(blocks.remainder());
+    }
+    pub(crate) fn finish(mut self) -> String {
+        let bits = self.len.wrapping_mul(8);
+        self.buf.push(0x80);
+        while self.buf.len() % 64 != 56 {
+            self.buf.push(0);
+        }
+        self.buf.extend_from_slice(&bits.to_be_bytes());
+        for block in self.buf.chunks_exact(64) {
+            compress(&mut self.state, block);
+        }
+        self.state.iter().map(|v| format!("{v:08x}")).collect()
+    }
+}
