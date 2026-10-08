@@ -42,6 +42,32 @@
             android:textIsSelectable="true"
             android:visibility="gone" />
 
+        <TextView
+            android:id="@+id/mods"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textIsSelectable="true"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/crash"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:fontFamily="monospace"
+            android:textColor="#D32F2F"
+            android:textIsSelectable="true"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/crashButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Dismiss crash report"
+            android:visibility="gone" />
+
         <Button
             android:id="@+id/importButton"
             android:layout_width="match_parent"

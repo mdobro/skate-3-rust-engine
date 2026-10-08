@@ -530,7 +530,7 @@ pub mod android {
                 return warn!("Android gamepad {device_id}: all four controller slots are in use");
             };
             let kind = Arc::new(controller_kind::from_android(name, vendor, product, device_id, user));
-            info!("Controller {index}: identified as {} (Android device {device_id}, name {name:?})", kind.summary());
+            info!("Controller {index}: identified as {} (Android device {device_id})", kind.summary());
             slots.ids[index] = Some(device_id);
             slots.published[index] = Some((0, XboxState::default(), kind));
         }

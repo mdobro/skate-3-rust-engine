@@ -15,6 +15,8 @@ macro_rules! report_meta {
 mod android_lifecycle;
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 mod android_perf;
+#[cfg(target_os = "android")]
+mod controller_prompt;
 mod render_caps;
 mod frame_timing;
 mod animation;

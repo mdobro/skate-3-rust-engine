@@ -79,6 +79,19 @@ Implementation notes are in [`docs/`](docs/). Patched Bevy dependencies and
 their licenses are in [`vendor/`](vendor/). This is an unofficial project,
 not affiliated with EA.
 
+## Android (experimental)
+
+Android builds are experimental and no game data is bundled. Convert your own
+copy on a PC: run the setup and click Export for Android, which writes a zip.
+Install the APK, open it, tap Import game data and pick the zip, then connect
+a Backbone or other controller and press Play. Lua mods go in the `mods`
+folder shown on the launcher screen.
+
+Details: [app](docs/android/android-app.md),
+[rendering](docs/android/rendering.md),
+[export and import](docs/android/export-and-import.md),
+[plan](docs/android/PLAN.md).
+
 ## Advanced diagnostics
 
 Windows builds support opt-in [performance timeline capture](docs/performance-tracing.md)

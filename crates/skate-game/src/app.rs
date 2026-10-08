@@ -178,6 +178,8 @@ pub(crate) fn build(
     app.add_plugins(crate::game_audio::GameAudioPlugin);
     #[cfg(target_os = "android")]
     app.add_plugins((crate::android_lifecycle::AndroidLifecyclePlugin, crate::android_perf::AndroidPerfPlugin));
+    #[cfg(target_os = "android")]
+    app.add_plugins(crate::controller_prompt::ControllerPromptPlugin);
     app.add_systems(Last, crate::crash_context::sample);
     crate::profiling::install(&mut app);
     app

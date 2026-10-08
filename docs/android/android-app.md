@@ -72,3 +72,20 @@ All of this is `cfg(target_os = "android")`; desktop is unchanged.
 scripts/android-smoke.sh                       # build APK; with a device: install, launch, tail logcat (skate3, RustStdoutStderr)
 scripts/android-smoke.sh push-data <dir>       # adb push <dir>/. to /sdcard/Android/data/com.skate3.engine/files/installation/
 ```
+
+## Status
+
+Implemented: Rust game on GameActivity, zip import with hash and asset checks, launcher with mods folder and last crash report, lifecycle pause/resume, Android gamepad bridge with Backbone identity, "Connect your controller" overlay (`controller_prompt.rs`, shown while no slot is ready), PC export, CI APK build.
+
+Verified here (no device): `cargo check -p skate-game` (desktop), `input::` tests, `skate-data` `android_import` tests, `tools.test_export_android`, `./gradlew assembleDebug testDebugUnitTest` with the APK holding `libskate_android.so` and `libc++_shared.so` and exporting `android_main`, `GameActivity_onCreate` and the five `NativeBridge` JNI symbols.
+
+Not verified: anything running on hardware.
+
+### On-device checklist (Galaxy S26 Ultra + Backbone)
+
+1. Boot: install, import the zip, Play. `adb logcat -s skate3` shows `REPORT_META` stages through `app_run`. University renders in landscape at 60 fps (frame-stats overlay). Background and resume do not crash.
+2. Without a pad the "Connect your controller" text shows and disappears when the pad connects.
+3. Backbone: Esc menu Controller row shows Backbone One with vendor/product IDs; B brakes and does not exit; a full trigger pull grabs; ollie, kickflip, heelflip flicks, manuals and grabs register; menus navigable from Start; unplug and re-plug mid-session recovers.
+4. Import: corrupted zip is rejected; every map passes verification.
+5. Mods: a Lua mod in the shown mods folder loads.
+6. Soak: 15 minutes on DownTown, watching memory, thermals and frame time.

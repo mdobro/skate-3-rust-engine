@@ -24,6 +24,10 @@ class LauncherActivity : AppCompatActivity() {
     private lateinit var importBtn: Button
     private lateinit var playBtn: Button
     private lateinit var deleteBtn: Button
+    private lateinit var mods: TextView
+    private lateinit var crash: TextView
+    private lateinit var crashBtn: Button
+    private var crashFile: File? = null
     @Volatile private var busy = false
 
     private val filesDir0: File get() = getExternalFilesDir(null) ?: filesDir
@@ -44,6 +48,13 @@ class LauncherActivity : AppCompatActivity() {
         importBtn = findViewById(R.id.importButton)
         playBtn = findViewById(R.id.playButton)
         deleteBtn = findViewById(R.id.deleteButton)
+        mods = findViewById(R.id.mods)
+        crash = findViewById(R.id.crash)
+        crashBtn = findViewById(R.id.crashButton)
+        crashBtn.setOnClickListener {
+            crashFile?.delete()
+            refreshCrash()
+        }
         importBtn.setOnClickListener { picker.launch(arrayOf("application/zip", "application/x-zip-compressed")) }
         playBtn.setOnClickListener { startActivity(Intent(this, SkateActivity::class.java)) }
         deleteBtn.setOnClickListener {
@@ -70,6 +81,22 @@ class LauncherActivity : AppCompatActivity() {
         playBtn.isEnabled = has && !busy
         deleteBtn.isEnabled = (install.exists() || staging.exists()) && !busy
         importBtn.isEnabled = !busy
+        val modsDir = File(filesDir0, "mods").also { it.mkdirs() }
+        mods.text = "Mods folder:\n$modsDir\nCopy Lua mods here"
+        refreshCrash()
+    }
+
+    private fun refreshCrash() {
+        val latest = File(filesDir0, "crashes").listFiles()?.filter { it.isFile }?.maxByOrNull { it.lastModified() }
+        crashFile = latest
+        val show = latest != null
+        crash.visibility = if (show) View.VISIBLE else View.GONE
+        crashBtn.visibility = if (show) View.VISIBLE else View.GONE
+        if (latest != null) {
+            val text = try { latest.bufferedReader().useLines { it.take(20).joinToString("\n") } }
+            catch (e: Exception) { "Cannot read ${latest.name}: ${e.message}" }
+            crash.text = "Last crash report (${latest.name}):\n$text"
+        }
     }
 
     private fun showError(msg: String) {
