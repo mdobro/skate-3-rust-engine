@@ -1,0 +1,48 @@
+# Android app (Kotlin side)
+
+The Gradle project lives in `android/` (package `com.skate3.engine`, minSdk 29, targetSdk 35, arm64-v8a only).
+
+## Build
+
+```
+export ANDROID_HOME=/opt/android-sdk
+cd android
+./gradlew assembleDebug                      # builds Rust via cargo-ndk, then the APK
+./gradlew assembleDebug -PskipCargo=true     # Kotlin side only
+./gradlew testDebugUnitTest -PskipCargo=true
+```
+
+`cargoNdkBuildDebug` and `cargoNdkBuildRelease` run from the repo root:
+`cargo ndk -t arm64-v8a --platform 29 --link-libcxx-shared -o android/app/src/main/jniLibs build -p skate-android --no-default-features [--release]`.
+They run before `preDebugBuild` and `preReleaseBuild`, and put `libskate_android.so` and `libc++_shared.so` in `jniLibs/arm64-v8a/`.
+
+Release signing reads `SKATE_KEYSTORE`, `SKATE_KEYSTORE_PASSWORD`, `SKATE_KEY_ALIAS`, `SKATE_KEY_PASSWORD` from Gradle properties or the environment. Without `SKATE_KEYSTORE` the release APK is unsigned. `versionCode` is `git rev-list --count HEAD` and `versionName` is `0.1.0-<short sha>`.
+
+`androidx.games:games-activity` is pinned to exactly 4.4.0, which the `android-activity` 0.6.1 crate requires.
+
+## Activities
+
+- `LauncherActivity`: shows whether `<getExternalFilesDir(null)>/installation/` has data, imports a zip through the system picker, and starts the game.
+- `SkateActivity` (GameActivity, `android.app.lib_name = skate_android`): immersive landscape, owns `GamepadBridge`.
+
+Import streams `installation/*` entries of the zip into `<files>/installation.new/` (with path traversal checks and a free space check of 1.05x the zip size), calls `verifyImport` and `checkAssets` on it, then swaps it in as `installation/`.
+
+## JNI contract
+
+All functions are `@JvmStatic external` on `object com.skate3.engine.NativeBridge`, so the Rust symbols are `Java_com_skate3_engine_NativeBridge_<name>`. The library is `libskate_android.so`, loaded with `System.loadLibrary("skate_android")` in the object initializer. `checkAssets` and `verifyImport` are called from a background thread; the gamepad calls come from the main thread.
+
+| Kotlin | Notes |
+|---|---|
+| `checkAssets(installRoot: String): String` | `""` on success, else error text. `installRoot` is the `installation` folder (contains `android-manifest.json`, `assets/`, `maps/`). |
+| `verifyImport(installRoot: String): String` | `""` on success, else error text. Checks `android-manifest.json` sizes and SHA-256. |
+| `gamepadConnected(deviceId: Int, name: String, vendor: Int, product: Int)` | Sent once per device per `onResume` and when a device appears. |
+| `gamepadDisconnected(deviceId: Int)` | Sent on removal and on `onPause` for every tracked device. |
+| `gamepadState(deviceId, buttons, lx, ly, rx, ry, lt, rt: Int)` | Only sent when the state changed, and once right after connect. |
+
+`buttons` uses XInput bits: DPAD_UP 0x1, DPAD_DOWN 0x2, DPAD_LEFT 0x4, DPAD_RIGHT 0x8, START 0x10, BACK 0x20, LS 0x40, RS 0x80, LB 0x100, RB 0x200, A 0x1000, B 0x2000, X 0x4000, Y 0x8000.
+
+Sticks are i16 values (-32768..32767) in XInput convention (Y up is positive, Kotlin negates Android's Y). Triggers are 0..255, exactly 255 from a 0.98 pull. Kotlin applies no deadzone. Digital L2/R2 keys give 255 only when the device has no analog trigger axis. The Backbone/home button (`BUTTON_MODE`) is ignored.
+
+The Rust side should treat `deviceId` as an opaque Android device id (not a slot index), drop state for unknown ids or after disconnect, and bump its packet number on each `gamepadState`. Gamepad key and motion events are consumed in `SkateActivity`, so B never becomes BACK.
+
+Logcat tag is `skate3`. Each device logs `Controller connected: <name> vendor=%04x product=%04x`.
